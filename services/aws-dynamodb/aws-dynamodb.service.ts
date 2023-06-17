@@ -129,7 +129,7 @@ export namespace AWSDynamoDbService{
         }
     }
 
-    export async function getOtp(nro_servicio: number, cod_prod: number, tip_id: string, num_id: number, cod_cue: number){
+    export async function getOtp(nro_servicio: string, cod_prod: string, tip_id: string, num_id: string, cod_cue: string){
         var AWS = require('aws-sdk');
         if (dbOtherAccount) await AWSDynamoDbService.accessDatabaseFromAnotherAccount(AWS);
         else{

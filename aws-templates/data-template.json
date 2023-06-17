@@ -1,0 +1,118 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters":{
+        "AccountId": {
+            "Type": "String",
+            "Default": "722631458341" 
+          },
+          "Region": {
+            "Type": "String",
+            "Description": "AWS Region",
+            "Default": "us-east-1"
+          },
+        "AppAccountId":{
+            "Type": "String",
+            "Description": "ID de la cuenta de aplicaciones para la conexión con data",
+            "Default": "us-east-1"
+        }
+    },
+    "Resources":{
+        "AccessOTPPolicy":{
+            "Type": "AWS::IAM::Policy",
+            "Properties":{
+                "PolicyName": "access-dynamodb-otp",
+                "PolicyDocument":{
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "dynamodb:CreateTable",
+                                "dynamodb:TagResource",
+                                "dynamodb:UntagResource",
+                                "dynamodb:PutItem",
+                                "dynamodb:DeleteItem",
+                                "dynamodb:GetItem",
+                                "dynamodb:Query",
+                                "dynamodb:UpdateItem",
+                                "dynamodb:CreateBackup",
+                                "dynamodb:DeleteTable",
+                                "dynamodb:ImportTable",
+                                "dynamodb:UpdateTable",
+                                "dynamodb:Scan"
+                            ],
+                            "Resource": [
+                                {
+                                    "Fn::Sub": "arn:aws:dynamodb:${Region}:${AccountId}:table:OTP_TABLE/index/SESSIONID"
+                                },
+                                {
+                                    "Fn::Sub": "arn:aws:dynamodb:${Region}:${AccountId}:table:OTP_TABLE"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "Roles": [
+                  {
+                    "Ref": "AccessOTPRole"
+                  }
+                ]
+            }
+        },
+        "AccessOTPRole":{
+            "Type": "AWS::IAM::Role",
+            "Properties":{
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": {
+                                    "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:aws:iam::",
+                                        {
+                                        "Ref": "AppAccountId"
+                                        },
+                                        ":root"
+                                    ]
+                                    ]
+                                }
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                }
+            }
+        },
+        "OTPTable": {
+            "Type": "AWS::DynamoDB::Table",
+            "Properties": {
+                "TableName": "OTP_TABLE",
+                "AttributeDefinitions": [
+                    {
+                    "AttributeName": "SESSIONID",
+                    "AttributeType": "S"
+                    }
+                ],
+                "KeySchema": [
+                    {
+                    "AttributeName": "SESSIONID",
+                    "KeyType": "HASH"
+                    }
+                ],
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": 5,
+                    "WriteCapacityUnits": 5
+                },
+                "SSESpecification": {
+                    "SSEEnabled": true,
+                    "SSEType": "KMS",
+                    "KMSMasterKeyId": "alias/aws/dynamodb"
+                }
+            }
+        }
+    }
+}

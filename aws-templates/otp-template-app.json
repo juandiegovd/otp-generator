@@ -1,0 +1,604 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters": {
+    "AccountId": {
+      "Type": "String",
+      "Default": "722631458341" 
+    },
+    "Region": {
+      "Type": "String",
+      "Description": "AWS Region",
+      "Default": "us-east-1"
+    },
+    "AWSRoleArn":{
+      "Type": "String",
+      "Description": "Role ARN para los accesos a cuenta con DynamoDB",
+      "Default": ""
+    },
+	  "S3Bucket":{
+      "Type": "String",
+        "Description": "Bucket de S3",
+        "Default": "prueba-otp"
+    },
+    "S3KeyAxios":{
+      "Type": "String",
+        "Description": "Key de S3 para Axios Layer",
+        "Default": "axios.zip"
+    },
+    "S3KeyGenerate":{
+      "Type": "String",
+        "Description": "Key de S3 para Lambda generate-otp",
+        "Default": "otp-generator-8bd68219-a2d1-4add-a90d-194afc8a981a.zip"
+    },
+    "S3KeySend":{
+      "Type": "String",
+        "Description": "Key de S3 para Lambda de send-otp",
+        "Default": "send-otp-84c2a2f2-a51c-4d18-bf79-aa61cbc67c89.zip"
+    },
+    "S3KeyValidate":{
+      "Type": "String",
+        "Description": "Key de S3 para Lambda de validate-otp",
+        "Default": "send-otp-84c2a2f2-a51c-4d18-bf79-aa61cbc67c89.zip"
+    }
+  },
+  "Resources": {
+    "Secret1": {
+      "Type": "AWS::SecretsManager::Secret",
+      "Properties": {
+        "Name": "SEND_SQS_OTP",
+        "SecretString": {
+          "Fn::Join": [
+            "",
+            [
+              "{\"SEND_SQS_NAME\":\"send-otp\",\"SEND_SQS_URL\":\"",
+              {
+                "Ref": "SendSQS"
+              },
+              "\"}"
+            ]
+          ]
+        }
+      }
+    },
+	  "Secret2": {
+      "Type": "AWS::SecretsManager::Secret",
+      "Properties": {
+        "Name": "SEND_MASIV_PARAMETERS",
+        "SecretString": "{\"EMAIL_FROM\":\"no-reply-peru@experian.com\",\"REPLY_EMAIL_TO\":\"servicioalclienteperu@experian.com\",\"SMS_ORIGINATOR\":\"85999\",\"TOKEN_NOTIFICATION\":\"RXhwZXJpYW5fQ3Jvc3Njb3JlX0lEX1FBX19ZNk9POnUsLlJpbWJOQDc=\",\"URL_NOTIFICATION_EMAIL\":\"https://api.masiv.masivian.com/email/v1/delivery\",\"URL_NOTIFICATION_SMS\":\"https://api-sms.masivapp.com/send-message\"}"
+      }
+    },
+	  "SendSQS": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "send-otp",
+        "KmsMasterKeyId": "alias/aws/sqs"
+      }
+    },
+	  "SendSQSPolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [{
+          "Ref": "SendSQS"
+        }],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": "SQS:*",
+              "Resource": {
+                "Fn::GetAtt": ["SendSQS", "Arn"]
+              },
+              "Principal": "*"
+            }
+          ]
+        }
+      }
+	  },
+    "GenerateSQS": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": "generate-otp",
+        "KmsMasterKeyId": "alias/aws/sqs"
+      }
+    },
+	  "GenerateSQSPolicy": {
+      "Type": "AWS::SQS::QueuePolicy",
+      "Properties": {
+        "Queues": [{
+          "Ref": "GenerateSQS"
+        }],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:iam::",
+                      {
+                        "Ref": "AWS::AccountId"
+                      },
+                      ":role/AWSLambdaSQSQueueExecutionRole"
+                    ]
+                  ]
+                }
+              },
+              "Action": "SQS:*",
+              "Resource": {
+                "Fn::GetAtt": ["GenerateSQS", "Arn"]
+              }
+            }
+          ]
+        }
+      }
+	  },
+    "OtpGeneratorRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "GenerateOTPPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "logs:CreateLogGroup",
+                  "Resource": "arn:aws:logs:*:*:*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                }
+              ]
+            }
+          },
+          {
+            "PolicyName": "GenerateOTPSQSExecutionPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "sqs:SendMessage",
+                  "Resource": {
+                    "Fn::GetAtt": ["SendSQS", "Arn"]
+                  }
+                }
+              ]
+            }
+          },
+		      {
+			      "PolicyName": "SecretsManagerGenerateOTP",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:GetSecretValue",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${Region}:${AccountId}:secret:SEND_SQS_OTP-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${Region}:${AccountId}:secret:SEND_MASIV_PARAMETERS-*"
+                    }
+                  ]
+                }
+              ]
+            }
+		      }
+        ]
+      }
+    },
+    "MyScheduledEvent": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Scheduled event rule for CloudWatch",
+        "ScheduleExpression": "rate(1 day)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": ["GenerateOTPLambda", "Arn"]
+            },
+            "Id": "MyLambdaFunctionTarget"
+          }
+        ]
+      }
+    },
+    "MyScheduledEvent2": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Scheduled event rule for CloudWatch",
+        "ScheduleExpression": "rate(1 day)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": ["SendOTPLambda", "Arn"]
+            },
+            "Id": "MyLambdaFunctionTarget2"
+          }
+        ]
+      }
+    },
+    "MyScheduledEvent3": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Scheduled event rule for CloudWatch",
+        "ScheduleExpression": "rate(1 day)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": ["ValidateOTPLambda", "Arn"]
+            },
+            "Id": "MyLambdaFunctionTarget3"
+          }
+        ]
+      }
+    },
+	  "GenerateOTPLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "generate-otp",
+        "Runtime": "nodejs14.x",
+        "Handler": "request-otp-sqs-trigger/index.handler",
+        "Code": {
+          "S3Bucket": {
+            "Ref": "S3Bucket"
+          },
+          "S3Key": {
+            "Ref": "S3KeyGenerate"
+          }
+        },
+        "Environment":{
+          "Variables":{
+            "REGION": {
+              "Ref": "REGION"
+            },
+            "DB_OTHER_ACCOUNT": "true",
+            "ROLE_ARN": {
+              "Ref": "AWSRoleArn"
+            }
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": ["OtpGeneratorRole", "Arn"]
+        }
+      }
+    },
+	  "AxiosLayer": {
+      "Type": "AWS::Lambda::LayerVersion",
+      "Properties": {
+        "LayerName": "axiosLayer",
+        "Description": "Axios Layer for HTTP Connection",
+        "Content": {
+          "S3Bucket": {
+            "Ref": "S3Bucket"
+          },
+          "S3Key": {
+            "Ref": "S3KeyAxios"
+          }
+        },
+        "CompatibleRuntimes": ["nodejs14.x"]
+      }
+    },
+	  "SendOTPLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "send-otp",
+        "Runtime": "nodejs14.x",
+        "Handler": "send-otp-sqs-trigger/index.handler",
+        "Code": {
+          "S3Bucket": {
+            "Ref": "S3Bucket"
+          },
+          "S3Key": {
+            "Ref": "S3KeySend"
+          }
+        },
+        "Environment":{
+          "Variables":{
+            "REGION": {
+              "Ref": "REGION"
+            },
+            "TEMPLATE_NOTIFICATION": "Has solicitado un código de validación. Confirma tu operación de validación de identidad con el código: ",
+            "DB_OTHER_ACCOUNT": "true",
+            "ROLE_ARN": {
+              "Ref": "AWSRoleArn"
+            }
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": ["OtpGeneratorRole", "Arn"]
+        },
+        "Layers": [
+          {
+            "Ref": "AxiosLayer"
+          }
+        ]
+      }
+    },
+	  "ValidateOTPLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "validate-otp",
+        "Runtime": "nodejs14.x",
+        "Handler": "validate-otp-http-trigger/index.handler",
+        "Code": {
+          "S3Bucket": {
+            "Ref": "S3Bucket"
+          },
+          "S3Key": {
+            "Ref": "S3KeyValidate"
+          }
+        },
+        "Environment":{
+          "Variables":{
+            "REGION": {
+              "Ref": "REGION"
+            },
+            "DB_OTHER_ACCOUNT": "true",
+            "ROLE_ARN": {
+              "Ref": "AWSRoleArn"
+            }
+          }
+        },
+        "Role": {
+          "Fn::GetAtt": ["OtpGeneratorRole", "Arn"]
+        }
+      }
+    },
+    "EventSourceMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "BatchSize": 10,
+        "Enabled": true,
+        "EventSourceArn": {
+          "Fn::GetAtt": ["GenerateSQS", "Arn"]
+        },
+        "FunctionName": {
+          "Ref": "GenerateOTPLambda"
+        }
+      }
+    },
+    "InvokeConfig": {
+      "Type": "AWS::Lambda::EventInvokeConfig",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "GenerateOTPLambda"
+        },
+        "DestinationConfig": {
+          "OnSuccess": {
+            "Destination": {
+              "Fn::GetAtt": ["SendSQS", "Arn"]
+            }
+          }
+        },
+        "Qualifier": "$LATEST"
+      }
+    },
+    "EventSourceMapping2": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "BatchSize": 10,
+        "Enabled": true,
+        "EventSourceArn": {
+          "Fn::GetAtt": ["SendSQS", "Arn"]
+        },
+        "FunctionName": {
+          "Ref": "SendOTPLambda"
+        }
+      }
+    },
+    "GenerateOTPLambdaPermission2": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": ["GenerateOTPLambda", "Arn"]
+        },
+        "Principal": {
+          "Fn::GetAtt": ["OtpGeneratorRole", "Arn"]
+        }
+      }
+    },
+    "GenerateOTPLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/generate-otp",
+        "RetentionInDays": 30
+      }
+    },
+    "SendOTPLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/send-otp",
+        "RetentionInDays": 30
+      }
+    },
+    "ValidateOTPLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": "/aws/lambda/validate-otp",
+        "RetentionInDays": 30
+      }
+    },
+    "GenerateOTPLambdaPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "GenerateOTPLambda"
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "sqs.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": ["GenerateSQS", "Arn"]
+        }
+      }
+    },
+    "ApiGatewayOTPRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "ApiGatewayOTPRole",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "apigateway.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "SQSSendMessagePolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "sqs:SendMessage",
+                  "Resource": {
+                    "Fn::GetAtt": ["SendSQS", "Arn"]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+	  },
+    "ApiGatewayOTP": {
+      "Type": "AWS::ApiGatewayV2::Api",
+      "Properties": {
+        "Name": "otp-generator",
+		"ProtocolType": "HTTP"
+      }
+    },
+    "ApiGatewayOTPIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ApiGatewayOTP"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationSubtype": "SQS-SendMessage",
+        "RequestParameters":{
+          "QueueUrl":{
+            "Ref": "GenerateSQS"
+          },
+			    "MessageBody": "$request.body.MessageBody"
+		    },
+		    "CredentialsArn":{
+          "Fn::GetAtt": ["ApiGatewayOTPRole", "Arn"]
+        },
+		    "PayloadFormatVersion": "1.0"
+      }
+    },
+    "ApiGatewayOTPRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ApiGatewayOTP"
+        },
+        "RouteKey": "POST /generate-otp",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "ApiGatewayOTPIntegration"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "ApiGatewayOTPValidateOTPIntegration": {
+      "Type": "AWS::ApiGatewayV2::Integration",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ApiGatewayOTP"
+        },
+        "IntegrationType": "AWS_PROXY",
+        "IntegrationUri": {
+          "Fn::GetAtt": ["ValidateOTPLambda", "Arn"]
+        },
+		    "PayloadFormatVersion": "2.0"
+      }
+    },
+    "ApiGatewayOTPValidateOTPRoute": {
+      "Type": "AWS::ApiGatewayV2::Route",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ApiGatewayOTP"
+        },
+        "RouteKey": "POST /validate-otp",
+        "Target": {
+          "Fn::Join": [
+            "/",
+            [
+              "integrations",
+              {
+                "Ref": "ApiGatewayOTPValidateOTPIntegration"
+              }
+            ]
+          ]
+        }
+      }
+    },
+    "MyApiGatewayStage": {
+      "Type": "AWS::ApiGatewayV2::Stage",
+      "Properties": {
+        "ApiId": {
+          "Ref": "ApiGatewayOTP"
+        },
+        "StageName": "$default",
+		    "AutoDeploy": true
+      }
+    },
+    "MyApiGatewayPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Ref": "ValidateOTPLambda"
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:aws:execute-api:${Region}:${AccountId}:${ApiGatewayOTP}/*"
+        }
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const req: ValidateOtpRequest = JSON.parse(event.body || '');
     const resp: ValidateOtpResponse = new ValidateOtpResponse();
     try{
-        const otpArray = await AWSDynamoDbService.getOtp(Number.parseInt(req.servicio), Number.parseInt(req.producto), req.tipoDoc, Number.parseInt(req.nroDoc), Number.parseInt(req.codCue));
+        const otpArray = await AWSDynamoDbService.getOtp(req.servicio, req.producto, req.tipoDoc, req.nroDoc,req.codCue);
         if (otpArray.length > 0){
             const otp = otpArray.filter((element) => element.ESTADO == 0)[0];
             const fechaHora = FunctionUtils.validateNotEmptyOrNull(otp.FECHAHORASMS) ? otp.FECHAHORASMS : FunctionUtils.validateNotEmptyOrNull(otp.FECHAHORACORREO) ? otp.FECHAHORACORREO : "";

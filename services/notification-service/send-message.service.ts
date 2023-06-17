@@ -13,13 +13,15 @@ export namespace NotificationService{
     const template = process.env.TEMPLATE_NOTIFICATION;
 
     export async function sendOtpCode(sendOtpRequest: SendOtpRequest): Promise<SendOtpResponse>{
-        if (FunctionUtils.validateNotEmptyOrNull(sendOtpRequest.celular)){
+        const notEmptyPhone = FunctionUtils.validateNotEmptyOrNull(sendOtpRequest.celular);
+        const notEmptyMail = FunctionUtils.validateNotEmptyOrNull(sendOtpRequest.correo);
+        if (notEmptyPhone){
             return await sendMessagePhone(sendOtpRequest);
         }
-        else if(FunctionUtils.validateNotEmptyOrNull(sendOtpRequest.correo)){
+        if(notEmptyMail){
             return await sendMessageMail(sendOtpRequest);
         }
-        else{
+        if (!notEmptyMail && !notEmptyMail){
             throw new OtpException(OtpExceptionCode.GENERIC_ERROR, OtpExceptionMessage.GENERIC_ERROR);
         }
     }

@@ -5,5 +5,5 @@ export class ValidateOtpRequest{
     tipoDoc: string;
     nroDoc: string;
     codCue: string;
-    otp: number;
+    otp: string;
 }
