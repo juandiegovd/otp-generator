@@ -39,6 +39,11 @@
       "Type": "String",
         "Description": "Key de S3 para Lambda de validate-otp",
         "Default": "send-otp-84c2a2f2-a51c-4d18-bf79-aa61cbc67c89.zip"
+    },
+    "ApiGatewayStageName":{
+      "Type": "String",
+        "Description": "Stage para API Gateway",
+        "Default": "dev"
     }
   },
   "Resources": {
@@ -185,7 +190,7 @@
                   "Effect": "Allow",
                   "Action": "sqs:SendMessage",
                   "Resource": {
-                    "Fn::GetAtt": ["SendSQS", "Arn"]
+                    "Fn::GetAtt": ["GenerateSQS", "Arn"]
                   }
                 }
               ]
@@ -497,106 +502,150 @@
         ]
       }
 	  },
-    "ApiGatewayOTP": {
-      "Type": "AWS::ApiGatewayV2::Api",
+    "MyApiGateway": {
+      "Type": "AWS::ApiGateway::RestApi",
       "Properties": {
-        "Name": "otp-generator",
-		"ProtocolType": "HTTP"
+        "Name": "otp-generator-private"
       }
     },
-    "ApiGatewayOTPIntegration": {
-      "Type": "AWS::ApiGatewayV2::Integration",
+    "ApiGatewayResource1": {
+      "Type": "AWS::ApiGateway::Resource",
       "Properties": {
-        "ApiId": {
-          "Ref": "ApiGatewayOTP"
+        "RestApiId": {
+          "Ref": "MyApiGateway"
         },
-        "IntegrationType": "AWS_PROXY",
-        "IntegrationSubtype": "SQS-SendMessage",
-        "RequestParameters":{
-          "QueueUrl":{
-            "Ref": "GenerateSQS"
+        "ParentId": {
+          "Fn::GetAtt": ["MyApiGateway", "RootResourceId"]
+        },
+        "PathPart": "generate-otp"
+      }
+    },
+    "MyMethod1": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "MyApiGateway"
+        },
+        "ResourceId": {
+          "Ref": "ApiGatewayResource1"
+        },
+        "HttpMethod": "POST",
+        "AuthorizationType": "NONE",
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Sub": "arn:aws:apigateway:${Region}:sqs:path/arn:aws:sqs:${Region}:${AccountId}:generate-otp"
           },
-			    "MessageBody": "$request.body.MessageBody"
-		    },
-		    "CredentialsArn":{
-          "Fn::GetAtt": ["ApiGatewayOTPRole", "Arn"]
-        },
-		    "PayloadFormatVersion": "1.0"
-      }
-    },
-    "ApiGatewayOTPRoute": {
-      "Type": "AWS::ApiGatewayV2::Route",
-      "Properties": {
-        "ApiId": {
-          "Ref": "ApiGatewayOTP"
-        },
-        "RouteKey": "POST /generate-otp",
-        "Target": {
-          "Fn::Join": [
-            "/",
-            [
-              "integrations",
-              {
-                "Ref": "ApiGatewayOTPIntegration"
+          "IntegrationResponses": [
+            {
+              "StatusCode": 200,
+              "ResponseTemplates": {
+                "application/json": ""
               }
-            ]
-          ]
+            }
+          ],
+          "Credentials": {
+            "Fn::GetAtt": ["OtpGeneratorRole", "Arn"]
+          },
+          "RequestTemplates": {
+            "application/json": "Action=SendMessage&MessageBody=$input.body"
+          }
         }
       }
     },
-    "ApiGatewayOTPValidateOTPIntegration": {
-      "Type": "AWS::ApiGatewayV2::Integration",
+    "ApiGatewayResource2": {
+      "Type": "AWS::ApiGateway::Resource",
       "Properties": {
-        "ApiId": {
-          "Ref": "ApiGatewayOTP"
+        "RestApiId": {
+          "Ref": "MyApiGateway"
         },
-        "IntegrationType": "AWS_PROXY",
-        "IntegrationUri": {
-          "Fn::GetAtt": ["ValidateOTPLambda", "Arn"]
+        "ParentId": {
+          "Fn::GetAtt": ["MyApiGateway", "RootResourceId"]
         },
-		    "PayloadFormatVersion": "2.0"
+        "PathPart": "validate-otp"
       }
     },
-    "ApiGatewayOTPValidateOTPRoute": {
-      "Type": "AWS::ApiGatewayV2::Route",
+    "MyMethod2": {
+      "Type": "AWS::ApiGateway::Method",
       "Properties": {
-        "ApiId": {
-          "Ref": "ApiGatewayOTP"
+        "RestApiId": {
+          "Ref": "MyApiGateway"
         },
-        "RouteKey": "POST /validate-otp",
-        "Target": {
-          "Fn::Join": [
-            "/",
-            [
-              "integrations",
-              {
-                "Ref": "ApiGatewayOTPValidateOTPIntegration"
-              }
-            ]
-          ]
+        "ResourceId": {
+          "Ref": "ApiGatewayResource2"
+        },
+        "HttpMethod": "POST",
+        "AuthorizationType": "NONE",
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Sub": "arn:aws:apigateway:${Region}:lambda:path/2015-03-31/functions/${ValidateOTPLambda.Arn}/invocations"
+          }
         }
       }
     },
-    "MyApiGatewayStage": {
-      "Type": "AWS::ApiGatewayV2::Stage",
+    "ApiGatewayStage": {
+      "Type": "AWS::ApiGateway::Stage",
       "Properties": {
-        "ApiId": {
-          "Ref": "ApiGatewayOTP"
+        "RestApiId": {
+          "Ref": "MyApiGateway"
         },
-        "StageName": "$default",
-		    "AutoDeploy": true
+        "StageName": "prod",
+        "DeploymentId": {
+          "Ref": "ApiGatewayDeployment"
+        }
       }
     },
-    "MyApiGatewayPermission": {
-      "Type": "AWS::Lambda::Permission",
+    "ApiGatewayDeployment": {
+      "Type": "AWS::ApiGateway::Deployment",
       "Properties": {
-        "FunctionName": {
-          "Ref": "ValidateOTPLambda"
+        "RestApiId": {
+          "Ref": "MyApiGateway"
+        }
+      }
+    },
+    "MyResourceDeployment1": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "MyApiGateway"
         },
-        "Action": "lambda:InvokeFunction",
-        "Principal": "apigateway.amazonaws.com",
-        "SourceArn": {
-          "Fn::Sub": "arn:aws:execute-api:${Region}:${AccountId}:${ApiGatewayOTP}/*"
+        "StageName":{
+          "Ref": "ApiGatewayStageName"
+        }
+      },
+      "DependsOn": "ApiGatewayResource1"
+    },
+    "MyResourceDeployment2": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "MyApiGateway"
+        },
+        "StageName":{
+          "Ref": "ApiGatewayStageName"
+        }
+      },
+      "DependsOn": "ApiGatewayResource2"
+    }, 
+    "ApiGatewayResourcePolicy": {
+      "Type": "AWS::ApiGateway::ResourcePolicy",
+      "Properties": {
+        "RestApiId": {
+          "Ref": "MyApiGateway"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": "execute-api:Invoke",
+              "Resource": "*"
+            }
+          ]
         }
       }
     }
