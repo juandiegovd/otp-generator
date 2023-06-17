@@ -1,0 +1,42 @@
+service: hello
+
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+
+# functions
+functions:
+  generate:
+    handler: request-otp-sqs-trigger/index.handler
+    events: # The events that trigger this function
+      - http:
+          path: /request-otp
+          method: post
+  send:
+    handler: send-otp-sqs-trigger/index.handler
+    eventos:
+      - sqs:
+          arn: arn:aws:sqs:us-east-2:722631458341:send-otp
+  validate:
+    handler: validate-otp-http-trigger/index.handler
+    events: # The events that trigger this function
+      - http:
+          path: /validate-otp
+          method: post
+
+# Serverless plugins
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline
+
+# Resources your functions use
+resources:
+  Resources:
+    # SNS Topics
+    SNSHelloEvent:
+      Type: AWS::SNS::Topic
+      Properties:
+        DisplayName: Hello Event Topic
+        TopicName: hello-event
